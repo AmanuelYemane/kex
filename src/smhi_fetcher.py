@@ -29,7 +29,8 @@ from src.config import (
     SMHI_CACHE_DIR,
     SMHI_PARAM_GHI,
     SMHI_PARAM_TEMPERATURE,
-    SMHI_STATION_ID,
+    SMHI_STATION_GHI,
+    SMHI_STATION_TEMPERATURE,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ def fetch_smhi_parameter(
     Parameters
     ----------
     station_id : int
-        SMHI station numeric ID (e.g. 98230 for Stockholm).
+        SMHI station numeric ID (e.g. 98230 for Stockholm A).
     parameter : int
         SMHI parameter number (1 = temperature, 11 = GHI).
     use_cache : bool
@@ -124,13 +125,23 @@ def fetch_smhi_parameter(
         df = pd.read_csv(cache, parse_dates=["timestamp"], index_col="timestamp")
         return df
 
-    # Fetch from API
-    url = (
-        f"{SMHI_BASE_URL}/parameter/{parameter}"
-        f"/station/{station_id}/period/corrected-archive/data.json"
-    )
-    logger.info("Fetching SMHI data: %s", url)
-    resp = requests.get(url, timeout=60)
+    # Fetch from API: try corrected-archive first, fall back to latest-months
+    periods = ["corrected-archive", "latest-months"]
+    resp = None
+    for period in periods:
+        url = (
+            f"{SMHI_BASE_URL}/parameter/{parameter}"
+            f"/station/{station_id}/period/{period}/data.json"
+        )
+        logger.info("Fetching SMHI data: %s", url)
+        resp = requests.get(url, timeout=60)
+        if resp.status_code == 200:
+            logger.info("Using period '%s' for station %d, param %d.", period, station_id, parameter)
+            break
+        logger.warning(
+            "Period '%s' returned %d for station %d, param %d.",
+            period, resp.status_code, station_id, parameter,
+        )
     resp.raise_for_status()
 
     df = _parse_smhi_json(resp.json(), parameter)
@@ -144,16 +155,23 @@ def fetch_smhi_parameter(
 
 
 def fetch_weather_data(
-    station_id: int | None = None,
+    station_temp: int | None = None,
+    station_ghi: int | None = None,
     *,
     use_cache: bool = True,
 ) -> pd.DataFrame:
     """Fetch temperature and GHI from SMHI, merge into one DataFrame.
 
+    SMHI uses separate stations for temperature and solar irradiance.
+    Temperature stations are regular met stations (e.g. "Stockholm A"),
+    while GHI stations are labelled "Sol" (e.g. "Stockholm Sol").
+
     Parameters
     ----------
-    station_id : int, optional
-        SMHI station ID. Defaults to ``config.SMHI_STATION_ID``.
+    station_temp : int, optional
+        Station ID for temperature. Defaults to ``config.SMHI_STATION_TEMPERATURE``.
+    station_ghi : int, optional
+        Station ID for GHI. Defaults to ``config.SMHI_STATION_GHI``.
     use_cache : bool
         Whether to use local cache.
 
@@ -163,16 +181,18 @@ def fetch_weather_data(
         Columns: ``temperature`` (°C), ``ghi`` (W/m²).
         Index: ``timestamp`` (UTC).
     """
-    if station_id is None:
-        station_id = SMHI_STATION_ID
+    if station_temp is None:
+        station_temp = SMHI_STATION_TEMPERATURE
+    if station_ghi is None:
+        station_ghi = SMHI_STATION_GHI
 
     temp_df = fetch_smhi_parameter(
-        station_id, SMHI_PARAM_TEMPERATURE, use_cache=use_cache
+        station_temp, SMHI_PARAM_TEMPERATURE, use_cache=use_cache
     )
     temp_df = temp_df.rename(columns={"value": "temperature"})
 
     ghi_df = fetch_smhi_parameter(
-        station_id, SMHI_PARAM_GHI, use_cache=use_cache
+        station_ghi, SMHI_PARAM_GHI, use_cache=use_cache
     )
     ghi_df = ghi_df.rename(columns={"value": "ghi"})
 

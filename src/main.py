@@ -39,7 +39,6 @@ from src.config import (
     FIGURES_DIR,
     RESULTS_DIR,
     RF_PARAM_GRID,
-    SMHI_STATION_ID,
 )
 from src.data_loader import load_and_merge
 from src.evaluation import (
@@ -119,7 +118,6 @@ def _run_model_on_split(
 
 def run_pipeline(
     production_csv: str,
-    station_id: int = SMHI_STATION_ID,
     smhi_csv: str | None = None,
     do_grid_search: bool = False,
 ) -> None:
@@ -129,8 +127,6 @@ def run_pipeline(
     ----------
     production_csv : str
         Path to the user's solar production CSV file.
-    station_id : int
-        SMHI station ID for fetching weather data.
     smhi_csv : str, optional
         Path to a local SMHI weather CSV (bypasses API fetch).
     do_grid_search : bool
@@ -146,7 +142,6 @@ def run_pipeline(
     print("=" * 60)
     df = load_and_merge(
         production_csv,
-        station_id=station_id,
         smhi_cache_csv=smhi_csv,
     )
     print(f"  Merged dataset: {len(df)} rows")
@@ -245,12 +240,6 @@ def main() -> None:
         help="Path to the solar production CSV file (your panel data).",
     )
     parser.add_argument(
-        "--station", "-s",
-        type=int,
-        default=SMHI_STATION_ID,
-        help=f"SMHI station ID (default: {SMHI_STATION_ID}).",
-    )
-    parser.add_argument(
         "--smhi-csv",
         default=None,
         help="Path to a local SMHI weather CSV (bypasses API fetch).",
@@ -265,7 +254,6 @@ def main() -> None:
 
     run_pipeline(
         production_csv=args.production,
-        station_id=args.station,
         smhi_csv=args.smhi_csv,
         do_grid_search=args.grid_search,
     )

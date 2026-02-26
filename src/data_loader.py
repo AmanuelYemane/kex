@@ -84,7 +84,6 @@ def load_production_data(filepath: str | Path) -> pd.DataFrame:
 
 def load_and_merge(
     production_csv: str | Path,
-    station_id: int | None = None,
     *,
     use_cache: bool = True,
     smhi_cache_csv: str | Path | None = None,
@@ -95,8 +94,6 @@ def load_and_merge(
     ----------
     production_csv : str or Path
         Path to the user's solar production CSV.
-    station_id : int, optional
-        SMHI station ID. Defaults to ``config.SMHI_STATION_ID``.
     use_cache : bool
         Whether to use cached SMHI data.
     smhi_cache_csv : str or Path, optional
@@ -123,7 +120,7 @@ def load_and_merge(
         if weather_df.index.tz is None:
             weather_df.index = weather_df.index.tz_localize("UTC")
     else:
-        weather_df = fetch_weather_data(station_id, use_cache=use_cache)
+        weather_df = fetch_weather_data(use_cache=use_cache)
 
     # Merge on nearest hourly timestamp (tolerance: 30 minutes)
     prod_df = prod_df.sort_index()
