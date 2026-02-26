@@ -3,7 +3,7 @@ Standalone script to fetch and save real SMHI weather data.
 
 Usage:
     python3 -m src.fetch_smhi
-    python3 -m src.fetch_smhi --station 98735
+    python3 -m src.fetch_smhi --temp-station 98230 --ghi-station 98735
 """
 
 import argparse
@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DATA_DIR, SMHI_STATION_ID
+from src.config import DATA_DIR, SMHI_STATION_GHI, SMHI_STATION_TEMP
 from src.smhi_fetcher import fetch_weather_data
 
 logging.basicConfig(
@@ -27,15 +27,22 @@ logging.basicConfig(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch SMHI weather data")
     parser.add_argument(
-        "--station", "-s", type=int, default=SMHI_STATION_ID,
-        help=f"SMHI station ID (default: {SMHI_STATION_ID})",
+        "--temp-station", type=int, default=SMHI_STATION_TEMP,
+        help=f"SMHI station ID for temperature (default: {SMHI_STATION_TEMP})",
+    )
+    parser.add_argument(
+        "--ghi-station", type=int, default=SMHI_STATION_GHI,
+        help=f"SMHI station ID for GHI (default: {SMHI_STATION_GHI})",
     )
     args = parser.parse_args()
 
-    print(f"Fetching temperature + GHI from SMHI station {args.station} ...")
-    df = fetch_weather_data(args.station, use_cache=False)
+    print(f"Fetching temperature from station {args.temp_station} ...")
+    print(f"Fetching GHI from station {args.ghi_station} ...")
+    df = fetch_weather_data(
+        args.temp_station, args.ghi_station, use_cache=False,
+    )
 
-    outpath = DATA_DIR / f"smhi_station_{args.station}.csv"
+    outpath = DATA_DIR / f"smhi_temp{args.temp_station}_ghi{args.ghi_station}.csv"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(outpath)
 

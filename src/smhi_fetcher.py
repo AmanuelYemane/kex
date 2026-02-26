@@ -29,7 +29,8 @@ from src.config import (
     SMHI_CACHE_DIR,
     SMHI_PARAM_GHI,
     SMHI_PARAM_TEMPERATURE,
-    SMHI_STATION_ID,
+    SMHI_STATION_GHI,
+    SMHI_STATION_TEMP,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def _cache_is_fresh(path: Path) -> bool:
 
 
 def _parse_smhi_json(data: dict, parameter: int) -> pd.DataFrame:
-    """Parse the SMHI JSON response into a tidy DataFrame.
+    """Parse the SMHI JSON response (``latest-months``) into a DataFrame.
 
     The response ``data`` dict contains a ``value`` list where each entry has:
     - ``date``: Unix timestamp in milliseconds
@@ -88,9 +89,78 @@ def _parse_smhi_json(data: dict, parameter: int) -> pd.DataFrame:
     return df
 
 
+def _parse_smhi_csv(text: str, parameter: int) -> pd.DataFrame:
+    """Parse the SMHI semicolon-delimited CSV (``corrected-archive``).
+
+    The CSV has a multi-line header (station info, parameter description,
+    column names) followed by data rows.  Data lines look like:
+
+        Datum;Tid (UTC);Value;Kvalitet;;extra info...
+
+    We detect the header row starting with ``Datum;`` and parse from there.
+    """
+    import io
+    import re
+
+    lines = text.splitlines()
+
+    # Find the header line that starts with "Datum;"
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.startswith("Datum;"):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        raise ValueError(
+            f"Could not find data header in corrected-archive CSV "
+            f"for parameter {parameter}."
+        )
+
+    # Data rows follow the header.  Each row is:
+    # date ; time(UTC) ; value ; quality ; ; optional_annotation
+    # Parse only lines that start with a date pattern (YYYY-MM-DD)
+    date_re = re.compile(r"^\d{4}-\d{2}-\d{2};")
+    records = []
+    for line in lines[header_idx + 1 :]:
+        if not date_re.match(line):
+            continue
+        parts = line.split(";")
+        if len(parts) < 4:
+            continue
+        date_str = parts[0]       # e.g. "2024-06-15"
+        time_str = parts[1]       # e.g. "14:00:00"
+        value_str = parts[2]      # e.g. "18.3"
+        quality = parts[3]        # e.g. "G" or "Y"
+
+        if quality not in ("G", "Y"):
+            continue
+        try:
+            val = float(value_str)
+        except ValueError:
+            continue
+
+        ts = pd.Timestamp(f"{date_str} {time_str}", tz="UTC")
+        records.append({"timestamp": ts, "value": val})
+
+    if not records:
+        raise ValueError(
+            f"No valid data rows after parsing corrected-archive CSV "
+            f"for parameter {parameter}."
+        )
+
+    df = pd.DataFrame(records).set_index("timestamp").sort_index()
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+# Periods to try in order: corrected-archive (CSV, years of data) first,
+# then latest-months (JSON, ~4 months of recent data) to fill the gap.
+_PERIODS = ["corrected-archive", "latest-months"]
+
 
 def fetch_smhi_parameter(
     station_id: int,
@@ -124,16 +194,45 @@ def fetch_smhi_parameter(
         df = pd.read_csv(cache, parse_dates=["timestamp"], index_col="timestamp")
         return df
 
-    # Fetch from API
-    url = (
-        f"{SMHI_BASE_URL}/parameter/{parameter}"
-        f"/station/{station_id}/period/corrected-archive/data.json"
-    )
-    logger.info("Fetching SMHI data: %s", url)
-    resp = requests.get(url, timeout=60)
-    resp.raise_for_status()
+    # Fetch from API — try each period and combine results.
+    # corrected-archive → data.csv  (semicolon-delimited)
+    # latest-months     → data.json (JSON)
+    all_frames = []
+    for period in _PERIODS:
+        if period == "corrected-archive":
+            ext = "csv"
+        else:
+            ext = "json"
 
-    df = _parse_smhi_json(resp.json(), parameter)
+        url = (
+            f"{SMHI_BASE_URL}/parameter/{parameter}"
+            f"/station/{station_id}/period/{period}/data.{ext}"
+        )
+        logger.info("Fetching SMHI data: %s", url)
+        resp = requests.get(url, timeout=120)
+        if resp.status_code == 404:
+            logger.warning(
+                "Period '%s' not available for station=%d param=%d, trying next.",
+                period, station_id, parameter,
+            )
+            continue
+        resp.raise_for_status()
+
+        if ext == "json":
+            all_frames.append(_parse_smhi_json(resp.json(), parameter))
+        else:
+            all_frames.append(_parse_smhi_csv(resp.text, parameter))
+
+    if not all_frames:
+        raise RuntimeError(
+            f"No data available for station {station_id}, parameter {parameter}. "
+            f"Tried periods: {_PERIODS}. Check that the station ID is valid for "
+            f"this parameter at https://opendata-download-metobs.smhi.se"
+        )
+
+    # Combine and deduplicate (corrected-archive + latest-months may overlap)
+    df = pd.concat(all_frames)
+    df = df[~df.index.duplicated(keep="first")].sort_index()
 
     # Save to cache
     df.to_csv(cache)
@@ -144,16 +243,22 @@ def fetch_smhi_parameter(
 
 
 def fetch_weather_data(
-    station_id: int | None = None,
+    temp_station_id: int | None = None,
+    ghi_station_id: int | None = None,
     *,
     use_cache: bool = True,
 ) -> pd.DataFrame:
     """Fetch temperature and GHI from SMHI, merge into one DataFrame.
 
+    SMHI uses separate station IDs for temperature and GHI.  If not
+    supplied, the defaults from ``config`` are used.
+
     Parameters
     ----------
-    station_id : int, optional
-        SMHI station ID. Defaults to ``config.SMHI_STATION_ID``.
+    temp_station_id : int, optional
+        Station ID for temperature data (default: ``config.SMHI_STATION_TEMP``).
+    ghi_station_id : int, optional
+        Station ID for GHI data (default: ``config.SMHI_STATION_GHI``).
     use_cache : bool
         Whether to use local cache.
 
@@ -163,16 +268,18 @@ def fetch_weather_data(
         Columns: ``temperature`` (°C), ``ghi`` (W/m²).
         Index: ``timestamp`` (UTC).
     """
-    if station_id is None:
-        station_id = SMHI_STATION_ID
+    if temp_station_id is None:
+        temp_station_id = SMHI_STATION_TEMP
+    if ghi_station_id is None:
+        ghi_station_id = SMHI_STATION_GHI
 
     temp_df = fetch_smhi_parameter(
-        station_id, SMHI_PARAM_TEMPERATURE, use_cache=use_cache
+        temp_station_id, SMHI_PARAM_TEMPERATURE, use_cache=use_cache
     )
     temp_df = temp_df.rename(columns={"value": "temperature"})
 
     ghi_df = fetch_smhi_parameter(
-        station_id, SMHI_PARAM_GHI, use_cache=use_cache
+        ghi_station_id, SMHI_PARAM_GHI, use_cache=use_cache
     )
     ghi_df = ghi_df.rename(columns={"value": "ghi"})
 
@@ -212,3 +319,4 @@ def list_stations(parameter: int = SMHI_PARAM_TEMPERATURE) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+

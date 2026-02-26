@@ -31,8 +31,12 @@ SMHI_BASE_URL = (
 SMHI_PARAM_TEMPERATURE = 1   # Lufttemperatur, momentanvärde, 1 gång/tim (°C)
 SMHI_PARAM_GHI = 11          # Global Irradians, medelvärde 1 timma (W/m²)
 
-# Default station: Stockholm-Observatoriekullen (change to match your panels)
-SMHI_STATION_ID = 98735
+# Default stations (Stockholm area — change to match your panels' location).
+# SMHI uses separate station IDs for temperature and GHI (solar irradiance).
+# Temperature: Stockholm-Observatoriekullen A
+SMHI_STATION_TEMP = 98230
+# GHI: Stockholm Sol
+SMHI_STATION_GHI = 98735
 
 # ---------------------------------------------------------------------------
 # Production CSV Column Names

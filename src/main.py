@@ -9,8 +9,9 @@ Usage
     # Fetch SMHI data automatically + merge with production CSV
     python3 -m src.main --production data/my_panels.csv
 
-    # Use a specific SMHI station
-    python3 -m src.main --production data/my_panels.csv --station 98230
+    # Use a specific SMHI station pair
+    python3 -m src.main --production data/my_panels.csv \\
+                        --temp-station 98230 --ghi-station 98735
 
     # Use cached/local SMHI weather CSV (e.g. for testing)
     python3 -m src.main --production data/synthetic_production.csv \\
@@ -39,7 +40,8 @@ from src.config import (
     FIGURES_DIR,
     RESULTS_DIR,
     RF_PARAM_GRID,
-    SMHI_STATION_ID,
+    SMHI_STATION_GHI,
+    SMHI_STATION_TEMP,
 )
 from src.data_loader import load_and_merge
 from src.evaluation import (
@@ -119,7 +121,8 @@ def _run_model_on_split(
 
 def run_pipeline(
     production_csv: str,
-    station_id: int = SMHI_STATION_ID,
+    temp_station_id: int = SMHI_STATION_TEMP,
+    ghi_station_id: int = SMHI_STATION_GHI,
     smhi_csv: str | None = None,
     do_grid_search: bool = False,
 ) -> None:
@@ -129,8 +132,10 @@ def run_pipeline(
     ----------
     production_csv : str
         Path to the user's solar production CSV file.
-    station_id : int
-        SMHI station ID for fetching weather data.
+    temp_station_id : int
+        SMHI station ID for temperature data.
+    ghi_station_id : int
+        SMHI station ID for GHI data.
     smhi_csv : str, optional
         Path to a local SMHI weather CSV (bypasses API fetch).
     do_grid_search : bool
@@ -146,7 +151,8 @@ def run_pipeline(
     print("=" * 60)
     df = load_and_merge(
         production_csv,
-        station_id=station_id,
+        temp_station_id=temp_station_id,
+        ghi_station_id=ghi_station_id,
         smhi_cache_csv=smhi_csv,
     )
     print(f"  Merged dataset: {len(df)} rows")
@@ -245,10 +251,16 @@ def main() -> None:
         help="Path to the solar production CSV file (your panel data).",
     )
     parser.add_argument(
-        "--station", "-s",
+        "--temp-station",
         type=int,
-        default=SMHI_STATION_ID,
-        help=f"SMHI station ID (default: {SMHI_STATION_ID}).",
+        default=SMHI_STATION_TEMP,
+        help=f"SMHI station ID for temperature (default: {SMHI_STATION_TEMP}).",
+    )
+    parser.add_argument(
+        "--ghi-station",
+        type=int,
+        default=SMHI_STATION_GHI,
+        help=f"SMHI station ID for GHI/irradiance (default: {SMHI_STATION_GHI}).",
     )
     parser.add_argument(
         "--smhi-csv",
@@ -265,7 +277,8 @@ def main() -> None:
 
     run_pipeline(
         production_csv=args.production,
-        station_id=args.station,
+        temp_station_id=args.temp_station,
+        ghi_station_id=args.ghi_station,
         smhi_csv=args.smhi_csv,
         do_grid_search=args.grid_search,
     )
