@@ -1,24 +1,20 @@
 """
 main.py
 -------
-End-to-end orchestration for the MLR vs. Random Forest solar power
+End-to-end orchestration for the Ridge vs. Random Forest solar power
 forecasting comparison across Nordic seasons.
 
 Usage
 -----
     # Fetch SMHI data automatically + merge with production CSV
-    python3 -m src.main --production data/my_panels.csv
+    python3 -m src.main --production data/production.csv
 
-    # Use a specific SMHI station pair
-    python3 -m src.main --production data/my_panels.csv \\
-                        --temp-station 98230 --ghi-station 98735
+    # Use cached/local SMHI weather CSV
+    python3 -m src.main --production data/production.csv \\
+                        --smhi-csv data/smhi_temp98230_ghi98735.csv
 
-    # Use cached/local SMHI weather CSV (e.g. for testing)
-    python3 -m src.main --production data/synthetic_production.csv \\
-                        --smhi-csv data/synthetic_smhi.csv
-
-    # With RF hyperparameter tuning
-    python3 -m src.main --production data/my_panels.csv --grid-search
+    # With RF hyperparameter tuning (slower)
+    python3 -m src.main --production data/production.csv --grid-search
 """
 
 from __future__ import annotations
@@ -75,8 +71,13 @@ def _run_model_on_split(
     season: str,
     feature_cols: list[str],
     do_grid_search: bool = False,
-) -> tuple:
-    """Train, predict, evaluate, and plot for a single model + split."""
+):
+    """Train, tune (if RF), predict on test set, evaluate and plot.
+
+    - Ridge: trained on split.X_train / y_train; evaluated on X_test / y_test.
+    - RF:    tuned using the val set (when do_grid_search=True), then refitted
+             on train-only; evaluated on X_test / y_test.
+    """
     if model_name == "MLR":
         pipeline = build_mlr()
         fitted = train_model(pipeline, split)
@@ -89,16 +90,17 @@ def _run_model_on_split(
             do_grid_search=do_grid_search,
         )
 
+    # Predict on TEST set only
     y_pred = predict(fitted, split)
 
-    # Metrics (pass X only for MLR to get Breusch-Pagan)
+    # Metrics on test set (pass X_test for Breusch-Pagan on Ridge/MLR)
     X_for_bp = split.X_test if model_name == "MLR" else None
     metrics = compute_metrics(split.y_test, y_pred, X=X_for_bp)
 
-    # Residual diagnostics
+    # Residual diagnostics on test set
     diag = residual_analysis(split.y_test, y_pred)
 
-    # Plots
+    # Plots (all based on test-set predictions)
     plot_actual_vs_predicted(
         np.asarray(split.y_test), y_pred, model_name, season
     )
@@ -139,13 +141,14 @@ def run_pipeline(
     smhi_csv : str, optional
         Path to a local SMHI weather CSV (bypasses API fetch).
     do_grid_search : bool
-        If True, run GridSearchCV for Random Forest hyperparameter tuning.
+        If True, run grid search for Random Forest hyperparameter tuning
+        using the explicit validation set.
     """
     # 0. Create output directories
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load and merge production + SMHI data
+    # 1. Load and merge production + SMHI data (filtered to configured range)
     print("=" * 60)
     print("STEP 1: Loading production + SMHI weather data")
     print("=" * 60)
@@ -166,22 +169,33 @@ def run_pipeline(
     feature_cols = get_feature_columns(df)
     print(f"  Features ({len(feature_cols)}): {feature_cols}")
 
-    # 3. Correlation heatmap (before splitting)
+    # 3. Correlation heatmap (computed on full dataset before splitting)
     plot_correlation_heatmap(df, feature_cols)
     print("  Correlation heatmap saved.")
 
-    # 4. Chronological splits
+    # 4. Explicit train / val / test splits (date-based)
     print("\n" + "=" * 60)
-    print("STEP 3: Splitting data (chronological)")
+    print("STEP 3: Splitting data (train / val / test)")
     print("=" * 60)
     full_split = chronological_split(df, feature_cols)
     season_dict = seasonal_splits(df, feature_cols)
 
-    all_splits = {"Full Year": full_split}
-    all_splits.update(season_dict)
-    print(f"  Splits: {list(all_splits.keys())}")
+    print(
+        f"  Full year — train: {len(full_split.X_train)}, "
+        f"val: {len(full_split.X_val)}, "
+        f"test: {len(full_split.X_test)} rows"
+    )
+    for sname, sp in season_dict.items():
+        print(
+            f"  {sname:8s} — train: {len(sp.X_train)}, "
+            f"val: {len(sp.X_val)}, "
+            f"test: {len(sp.X_test)} rows"
+        )
 
-    # 5. Train and evaluate
+    all_splits: dict[str, SplitData] = {"Full Year": full_split}
+    all_splits.update(season_dict)
+
+    # 5. Train and evaluate models
     print("\n" + "=" * 60)
     print("STEP 4: Training and evaluating models")
     print("=" * 60)
@@ -192,14 +206,15 @@ def run_pipeline(
         results[split_name] = {}
 
         for model_name in ("MLR", "RF"):
-            print(f"  Training {model_name} ...")
+            label = "Ridge (MLR)" if model_name == "MLR" else "Random Forest"
+            print(f"  Training {label} ...")
             metrics, fitted = _run_model_on_split(
                 model_name, split_data, split_name, feature_cols,
                 do_grid_search=(do_grid_search and model_name == "RF"),
             )
             results[split_name][model_name] = metrics
             print(
-                f"    RMSE={metrics.rmse:.4f}  "
+                f"    nRMSE={metrics.nrmse:.2f}%  "
                 f"nMAE={metrics.nmae:.2f}%  "
                 f"R2={metrics.r2:.4f}"
             )
@@ -218,7 +233,7 @@ def run_pipeline(
     export_latex(summary_df, str(tex_path))
     print(f"  LaTeX -> {tex_path}")
 
-    # 7. Seasonal bar charts
+    # 7. Seasonal bar charts (all four seasons, test-set metrics)
     season_only = summary_df[summary_df["season"] != "Full Year"]
     if not season_only.empty:
         plot_seasonal_bars(season_only)
@@ -226,7 +241,7 @@ def run_pipeline(
 
     # 8. Console summary
     print("\n" + "=" * 60)
-    print("RESULTS SUMMARY")
+    print("RESULTS SUMMARY (Test Set)")
     print("=" * 60)
     print(summary_df.to_string(index=False))
     print("\nDone. All figures saved to:", FIGURES_DIR)
@@ -243,7 +258,7 @@ def main() -> None:
     )
 
     parser = argparse.ArgumentParser(
-        description="MLR vs. Random Forest: Solar Power Forecasting (Nordic)",
+        description="Ridge vs. Random Forest: Solar Power Forecasting (Nordic)",
     )
     parser.add_argument(
         "--production", "-p",
@@ -271,7 +286,7 @@ def main() -> None:
         "--grid-search",
         action="store_true",
         default=False,
-        help="Run GridSearchCV for RF hyperparameter tuning (slower).",
+        help="Run grid search for RF hyperparameter tuning (uses val set, slower).",
     )
     args = parser.parse_args()
 

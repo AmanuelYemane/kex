@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 plt.style.use(PLOT_STYLE)
 
 MODEL_COLOURS = {"MLR": "#3498db", "RF": "#e74c3c"}
-SEASON_ORDER = ["Winter", "Spring", "Summer", "Autumn"]
+SEASON_ORDER = ["Winter", "Spring", "Summer", "Fall"]
 
 
 def _ensure_dir() -> Path:
@@ -102,12 +102,12 @@ def plot_residuals(
 
 
 # ---------------------------------------------------------------------------
-# 3. Seasonal Bar Charts (RMSE and R^2)
+# 3. Seasonal Bar Charts (nRMSE and R^2)
 # ---------------------------------------------------------------------------
 
 def plot_seasonal_bars(summary_df: pd.DataFrame) -> None:
-    """Side-by-side bar chart of RMSE and R^2 grouped by season."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    """Bar charts of nRMSE, nMAE, and R^2 grouped by season (test set)."""
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
     present_seasons = [s for s in SEASON_ORDER if s in summary_df["season"].values]
     plot_df = summary_df[summary_df["season"].isin(present_seasons)].copy()
@@ -115,19 +115,25 @@ def plot_seasonal_bars(summary_df: pd.DataFrame) -> None:
         plot_df["season"], categories=present_seasons, ordered=True
     )
 
-    sns.barplot(data=plot_df, x="season", y="rmse", hue="model",
+    sns.barplot(data=plot_df, x="season", y="nrmse_pct", hue="model",
                 palette=MODEL_COLOURS, ax=axes[0])
-    axes[0].set_title("RMSE by Season")
-    axes[0].set_ylabel("RMSE (kW)")
+    axes[0].set_title("nRMSE by Season")
+    axes[0].set_ylabel("nRMSE (%)")
     axes[0].set_xlabel("")
 
-    sns.barplot(data=plot_df, x="season", y="r2", hue="model",
+    sns.barplot(data=plot_df, x="season", y="nmae_pct", hue="model",
                 palette=MODEL_COLOURS, ax=axes[1])
-    axes[1].set_title(r"$R^2$ by Season")
-    axes[1].set_ylabel(r"$R^2$")
+    axes[1].set_title("nMAE by Season")
+    axes[1].set_ylabel("nMAE (%)")
     axes[1].set_xlabel("")
 
-    fig.suptitle("MLR vs. RF: Seasonal Performance Comparison", fontsize=14, y=1.02)
+    sns.barplot(data=plot_df, x="season", y="r2", hue="model",
+                palette=MODEL_COLOURS, ax=axes[2])
+    axes[2].set_title(r"$R^2$ by Season")
+    axes[2].set_ylabel(r"$R^2$")
+    axes[2].set_xlabel("")
+
+    fig.suptitle("Ridge vs. RF: Seasonal Performance Comparison (Test Set)", fontsize=14, y=1.02)
     fig.tight_layout()
 
     outpath = _ensure_dir() / f"seasonal_bars.{FIGURE_FORMAT}"

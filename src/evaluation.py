@@ -6,9 +6,9 @@ analysis between MLR and Random Forest.
 
 Metrics
 -------
-- RMSE: Root Mean Squared Error
+- nRMSE: Normalised Root Mean Squared Error (RMSE / mean(y) * 100 %)
 - nMAE: Normalised Mean Absolute Error (MAE / mean(y) * 100 %)
-- R^2 : Coefficient of determination
+- R^2: Coefficient of determination
 - Breusch-Pagan p-value: heteroscedasticity test on MLR residuals
 - Durbin-Watson: autocorrelation in residuals
 """
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class Metrics:
     """Container for a single model's evaluation metrics."""
 
-    rmse: float
+    nrmse: float  # percentage
     nmae: float  # percentage
     r2: float
     breusch_pagan_pvalue: float | None = None
@@ -49,7 +49,7 @@ class Metrics:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "rmse": self.rmse,
+            "nrmse_pct": self.nrmse,
             "nmae_pct": self.nmae,
             "r2": self.r2,
             "bp_pvalue": self.breusch_pagan_pvalue,
@@ -76,7 +76,7 @@ def compute_metrics(
     y_pred: np.ndarray,
     X: np.ndarray | pd.DataFrame | None = None,
 ) -> Metrics:
-    """Compute RMSE, nMAE, R^2, and (optionally) heteroscedasticity stats.
+    """Compute nRMSE, nMAE, R^2, and (optionally) heteroscedasticity stats.
 
     Parameters
     ----------
@@ -98,6 +98,7 @@ def compute_metrics(
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
     mean_y = float(np.mean(y_true))
+    nrmse = (rmse / mean_y * 100.0) if mean_y != 0 else float("inf")
     nmae = (mae / mean_y * 100.0) if mean_y != 0 else float("inf")
     r2 = float(r2_score(y_true, y_pred))
 
@@ -117,10 +118,10 @@ def compute_metrics(
         dw_stat = float(durbin_watson(residuals))
 
     logger.info(
-        "Metrics: RMSE=%.4f, nMAE=%.2f%%, R2=%.4f", rmse, nmae, r2
+        "Metrics: nRMSE=%.2f%%, nMAE=%.2f%%, R2=%.4f", nrmse, nmae, r2
     )
     return Metrics(
-        rmse=rmse,
+        nrmse=nrmse,
         nmae=nmae,
         r2=r2,
         breusch_pagan_pvalue=bp_pvalue,
@@ -163,7 +164,7 @@ def build_summary_table(
     Returns
     -------
     pd.DataFrame
-        Columns: season, model, rmse, nmae_pct, r2, bp_pvalue, dw_stat.
+        Columns: season, model, nrmse_pct, nmae_pct, r2, bp_pvalue, dw_stat.
     """
     rows: list[dict[str, Any]] = []
     for season, models in results.items():
@@ -186,7 +187,7 @@ def export_latex(df: pd.DataFrame, filepath: str) -> None:
         Destination ``.tex`` file.
     """
     formatters = {
-        "rmse": "{:.4f}".format,
+        "nrmse_pct": "{:.2f}".format,
         "nmae_pct": "{:.2f}".format,
         "r2": "{:.4f}".format,
         "bp_pvalue": lambda v: f"{v:.4f}" if pd.notna(v) else "--",

@@ -8,6 +8,8 @@ The two data sources are:
 1. **Production data**: user-provided CSV with at least a timestamp column
    and a power output column (names configurable in ``config.py``).
 2. **SMHI weather data**: temperature + GHI fetched via ``smhi_fetcher``.
+
+Data is filtered to the range [DATA_START, DATA_END] defined in config.py.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ import numpy as np
 import pandas as pd
 
 from src.config import (
+    DATA_END,
+    DATA_START,
     MONTH_TO_SEASON,
     PRODUCTION_POWER_COL,
     PRODUCTION_TIMESTAMP_COL,
@@ -37,6 +41,12 @@ logger = logging.getLogger(__name__)
 def load_production_data(filepath: str | Path) -> pd.DataFrame:
     """Load and clean the user's solar production CSV.
 
+    The real production CSV (from Stockholm Stad) uses:
+    - UTF-8-BOM encoding
+    - Semicolon separator
+    - Column headers: ``Tid`` (timestamp), ``energiprod_sum`` (kWh per hour)
+    - Hourly energy in kWh ≡ average power in kW (1 kWh over 1 h = 1 kW avg)
+
     Parameters
     ----------
     filepath : str or Path
@@ -52,7 +62,15 @@ def load_production_data(filepath: str | Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Production data file not found: {filepath}")
 
     logger.info("Loading production data from %s", filepath)
-    df = pd.read_csv(filepath, parse_dates=[PRODUCTION_TIMESTAMP_COL])
+
+    # Try reading with the real format first (semicolon, BOM).
+    # Fall back to comma-separated if the expected timestamp column is missing.
+    df = pd.read_csv(
+        filepath,
+        sep=";",
+        encoding="utf-8-sig",  # strips BOM automatically
+        parse_dates=[PRODUCTION_TIMESTAMP_COL],
+    )
 
     # Rename to internal standard names
     df = df.rename(columns={
@@ -60,14 +78,17 @@ def load_production_data(filepath: str | Path) -> pd.DataFrame:
         PRODUCTION_POWER_COL: TARGET_COL,
     })
 
+    # Drop columns that are not needed (trailing empties, embedded weather cols)
+    df = df[["timestamp", TARGET_COL]]
+
     df = df.set_index("timestamp").sort_index()
+
+    # Coerce numeric (some rows may have empty strings after semicolons)
+    df[TARGET_COL] = pd.to_numeric(df[TARGET_COL], errors="coerce")
 
     # Ensure timezone-aware (assume UTC if naive)
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC")
-
-    # Keep only the power column
-    df = df[[TARGET_COL]]
 
     # Remove duplicates
     n_dup = df.index.duplicated().sum()
@@ -111,6 +132,7 @@ def load_and_merge(
     pd.DataFrame
         Merged DataFrame with columns: ``temperature``, ``ghi``,
         ``power_kw``, ``season``.  Indexed by datetime (UTC).
+        Rows are strictly within [DATA_START, DATA_END].
     """
     # Load production data
     prod_df = load_production_data(production_csv)
@@ -162,6 +184,21 @@ def load_and_merge(
     if n_night > 0:
         logger.info("Removing %d nighttime rows.", n_night)
         merged = merged[~nighttime_mask]
+
+    # -----------------------------------------------------------------------
+    # Filter strictly to the configured data range [DATA_START, DATA_END].
+    # Both bounds are inclusive (date-level slicing via .loc on a
+    # timezone-aware index requires timezone-aware boundary strings).
+    # -----------------------------------------------------------------------
+    start_ts = pd.Timestamp(DATA_START, tz="UTC")
+    end_ts   = pd.Timestamp(DATA_END,   tz="UTC") + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    merged = merged.loc[start_ts:end_ts]
+
+    n_filtered = len(merged)
+    logger.info(
+        "After date filter [%s, %s]: %d rows remain.",
+        DATA_START, DATA_END, n_filtered,
+    )
 
     # Add season column
     merged["season"] = merged.index.month.map(MONTH_TO_SEASON)

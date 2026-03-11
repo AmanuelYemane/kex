@@ -42,8 +42,10 @@ SMHI_STATION_GHI = 98735
 # Production CSV Column Names
 # ---------------------------------------------------------------------------
 # Adjust these to match the column names in YOUR solar production CSV.
-PRODUCTION_TIMESTAMP_COL = "timestamp"
-PRODUCTION_POWER_COL = "power_kw"
+# The real production CSV uses a semicolon separator, UTF-8-BOM encoding,
+# and Swedish column headers.
+PRODUCTION_TIMESTAMP_COL = "Tid"          # ISO-8601 timestamp column
+PRODUCTION_POWER_COL = "energiprod_sum"   # Hourly energy (kWh ≡ avg kW)
 
 # ---------------------------------------------------------------------------
 # Internal Column Names (used after loading/merging)
@@ -63,7 +65,7 @@ SEASONS = {
     "Winter": (12, 1, 2),
     "Spring": (3, 4, 5),
     "Summer": (6, 7, 8),
-    "Autumn": (9, 10, 11),
+    "Fall":   (9, 10, 11),
 }
 
 # Mapping: month number -> season name (convenience lookup)
@@ -89,23 +91,33 @@ SNOW_ELIGIBLE_MONTHS = (11, 12, 1, 2, 3)
 SOLAR_CONSTANT = 1361.0
 
 # ---------------------------------------------------------------------------
+# Data Date Range (all dates are inclusive, Europe/Stockholm local time)
+# ---------------------------------------------------------------------------
+DATA_START = "2017-03-01"   # First date of total data range
+DATA_END   = "2024-02-28"   # Last date of total data range
+
+TRAIN_START = "2017-03-01"
+TRAIN_END   = "2022-02-28"
+
+VAL_START   = "2022-03-01"
+VAL_END     = "2023-02-28"
+
+TEST_START  = "2023-03-01"
+TEST_END    = "2024-02-28"
+
+# ---------------------------------------------------------------------------
 # Model Hyperparameters
 # ---------------------------------------------------------------------------
-# Random Forest grid for GridSearchCV
+# Ridge alpha values to search over
+RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0]
+
+# Random Forest grid for hyperparameter search on validation set
 RF_PARAM_GRID = {
     "rf__n_estimators": [100, 300, 500],
     "rf__max_depth": [10, 20, None],
     "rf__min_samples_split": [2, 5],
     "rf__min_samples_leaf": [1, 4],
 }
-
-# TimeSeriesSplit folds for cross-validation
-CV_N_SPLITS = 5
-
-# ---------------------------------------------------------------------------
-# Train / Test split ratio (chronological)
-# ---------------------------------------------------------------------------
-TRAIN_RATIO = 0.80
 
 # ---------------------------------------------------------------------------
 # Plotting
