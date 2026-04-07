@@ -142,25 +142,38 @@ def plot_seasonal_bars(summary_df: pd.DataFrame) -> None:
 # 4. RF Feature Importance
 # ---------------------------------------------------------------------------
 
-def plot_feature_importance(
-    importances: np.ndarray,
+def plot_seasonal_feature_importances(
+    importances_dict: dict[str, np.ndarray],
     feature_names: list[str],
-    season: str,
     top_n: int = 15,
 ) -> None:
-    """Horizontal bar chart of Random Forest feature importances."""
-    indices = np.argsort(importances)[-top_n:]
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.barh(range(len(indices)), importances[indices],
-            color=MODEL_COLOURS["RF"], edgecolor="white")
-    ax.set_yticks(range(len(indices)))
-    ax.set_yticklabels([feature_names[i] for i in indices])
-    ax.set_xlabel("Feature Importance (MDI)")
-    ax.set_title(f"RF Feature Importance ({season})")
-    fig.tight_layout()
+    """A 2x2 subplot of Horizontal bar charts of Random Forest feature importances for all seasons."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True, sharey=True)
+    flat_axes = axes.flatten()
 
-    outpath = _ensure_dir() / f"feature_importance_RF_{season}.{FIGURE_FORMAT}"
-    fig.savefig(outpath, dpi=FIGURE_DPI)
+    fig.suptitle("Random Forest Feature Importance by Season", fontsize=16, y=1.02)
+    fig.supxlabel("Feature Importance (MDI)", fontsize=14, y=-0.02)
+
+    for i, season in enumerate(SEASON_ORDER):
+        if season not in importances_dict:
+            continue
+        ax = flat_axes[i]
+        importances = importances_dict[season]
+        indices = np.argsort(importances)[-top_n:]
+        
+        ax.barh(range(len(indices)), importances[indices],
+                color=MODEL_COLOURS.get("RF", "#e74c3c"), edgecolor="white")
+        ax.set_yticks(range(len(indices)))
+        
+        # Only set y tick labels if it's the first column (sharey=True handles hiding them visually, but we still need to set the strings)
+        ax.set_yticklabels([feature_names[j] for j in indices])
+        
+        ax.set_title(season, fontsize=14)
+        ax.grid(axis='x', linestyle='--', alpha=0.7)
+
+    fig.tight_layout()
+    outpath = _ensure_dir() / f"feature_importance_RF_Seasonal.{FIGURE_FORMAT}"
+    fig.savefig(outpath, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("Saved %s", outpath)
 
