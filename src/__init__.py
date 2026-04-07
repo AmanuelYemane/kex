@@ -1,2 +1,2 @@
-# Solar Power Forecasting: MLR vs. Random Forest
+# Solar Power Forecasting: RR vs. Random Forest
 # KTH Bachelor's Thesis

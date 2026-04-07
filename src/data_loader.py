@@ -84,6 +84,8 @@ def load_production_data(filepath: str | Path) -> pd.DataFrame:
     df = df.set_index("timestamp").sort_index()
 
     # Coerce numeric (some rows may have empty strings after semicolons)
+    # Replace Swedish decimal commas with periods before parsing
+    df[TARGET_COL] = df[TARGET_COL].astype(str).str.replace(",", ".")
     df[TARGET_COL] = pd.to_numeric(df[TARGET_COL], errors="coerce")
 
     # Ensure timezone-aware (assume UTC if naive)

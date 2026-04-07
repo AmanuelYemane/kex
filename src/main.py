@@ -24,6 +24,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -48,7 +49,7 @@ from src.evaluation import (
     residual_analysis,
 )
 from src.feature_engineering import engineer_features, get_feature_columns
-from src.models import build_mlr, build_rf, predict, train_model
+from src.models import build_rr, build_rf, predict, train_model
 from src.seasonal_split import SplitData, chronological_split, seasonal_splits
 from src.visualization import (
     plot_actual_vs_predicted,
@@ -72,6 +73,7 @@ def _run_model_on_split(
     season: str,
     feature_cols: list[str],
     do_grid_search: bool = False,
+    preloaded_params: dict[str, Any] | None = None,
 ):
     """Train, tune (if RF), predict on test set, evaluate and plot.
 
@@ -79,11 +81,13 @@ def _run_model_on_split(
     - RF:    tuned using the val set (when do_grid_search=True), then refitted
              on train-only; evaluated on X_test / y_test.
     """
-    if model_name == "MLR":
-        pipeline = build_mlr()
+    if model_name == "RR":
+        pipeline = build_rr()
         fitted, best_params = train_model(pipeline, split)
     else:
         pipeline = build_rf()
+        if preloaded_params:
+            pipeline.set_params(**preloaded_params)
         fitted, best_params = train_model(
             pipeline,
             split,
@@ -93,9 +97,11 @@ def _run_model_on_split(
 
     # Predict on TEST set only
     y_pred = predict(fitted, split)
+    if model_name == "RR":
+        y_pred = np.maximum(y_pred, 0.0)
 
-    # Metrics on test set (pass X_test for Breusch-Pagan on Ridge/MLR)
-    X_for_bp = split.X_test if model_name == "MLR" else None
+    # Metrics on test set (pass X_test for Breusch-Pagan on Ridge/RR)
+    X_for_bp = split.X_test if model_name == "RR" else None
     metrics = compute_metrics(split.y_test, y_pred, X=X_for_bp)
 
     # Residual diagnostics on test set
@@ -203,17 +209,30 @@ def run_pipeline(
     results: dict[str, dict[str, object]] = {}
     best_params_dict: dict[str, dict[str, Any]] = {}
 
+    loaded_params: dict[str, dict[str, Any]] = {}
+    if not do_grid_search:
+        params_path = RESULTS_DIR / "best_hyperparameters.json"
+        if params_path.exists():
+            with open(params_path, "r") as f:
+                loaded_params = json.load(f)
+            print(f"  Loaded hyperparameters from {params_path}")
+
     for split_name, split_data in all_splits.items():
         print(f"\n--- {split_name} ---")
         results[split_name] = {}
         best_params_dict[split_name] = {}
 
-        for model_name in ("MLR", "RF"):
-            label = "Ridge (MLR)" if model_name == "MLR" else "Random Forest"
+        for model_name in ("RR", "RF"):
+            label = "Ridge (RR)" if model_name == "RR" else "Random Forest"
             print(f"  Training {label} ...")
+            preloaded_params = None
+            if not do_grid_search and split_name in loaded_params and model_name in loaded_params[split_name]:
+                preloaded_params = loaded_params[split_name][model_name]
+
             metrics, fitted, best_params = _run_model_on_split(
                 model_name, split_data, split_name, feature_cols,
                 do_grid_search=(do_grid_search and model_name == "RF"),
+                preloaded_params=preloaded_params,
             )
             results[split_name][model_name] = metrics
             
@@ -247,9 +266,8 @@ def run_pipeline(
         print(f"  Hyperparameters -> {params_path}")
 
     # 7. Seasonal bar charts (all four seasons, test-set metrics)
-    season_only = summary_df[summary_df["season"] != "Full Year"]
-    if not season_only.empty:
-        plot_seasonal_bars(season_only)
+    if not summary_df.empty:
+        plot_seasonal_bars(summary_df)
         print("  Seasonal bar charts saved.")
 
     # 8. Console summary

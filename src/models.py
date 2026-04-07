@@ -1,7 +1,7 @@
 """
 models.py
 ---------
-Build, train, and evaluate Ridge (MLR with L2 regularisation) and
+Build, train, and evaluate Ridge (RR with L2 regularisation) and
 Random Forest (RF) pipelines for the comparative analysis.
 
 Ridge is tuned via cross-validation on the training set (RidgeCV).
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # Model builders
 # ---------------------------------------------------------------------------
 
-def build_mlr() -> Pipeline:
+def build_rr() -> Pipeline:
     """Return a Ridge regression pipeline with feature scaling.
 
     RidgeCV selects the best alpha from RIDGE_ALPHAS using leave-one-out
@@ -40,7 +40,7 @@ def build_mlr() -> Pipeline:
     """
     return Pipeline([
         ("scaler", StandardScaler()),
-        ("mlr", RidgeCV(alphas=RIDGE_ALPHAS, store_cv_results=False)),
+        ("rr", RidgeCV(alphas=RIDGE_ALPHAS, store_cv_results=False)),
     ])
 
 

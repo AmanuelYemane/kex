@@ -1,7 +1,7 @@
 """
 visualization.py
 ----------------
-Publication-quality figures for the MLR vs. Random Forest solar power
+Publication-quality figures for the RR vs. Random Forest solar power
 forecasting comparison.  All plots are saved to ``config.FIGURES_DIR``.
 """
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 plt.style.use(PLOT_STYLE)
 
-MODEL_COLOURS = {"MLR": "#3498db", "RF": "#e74c3c"}
+MODEL_COLOURS = {"RR": "#3498db", "RF": "#e74c3c"}
 SEASON_ORDER = ["Winter", "Spring", "Summer", "Fall"]
 
 
@@ -102,44 +102,40 @@ def plot_residuals(
 
 
 # ---------------------------------------------------------------------------
-# 3. Seasonal Bar Charts (nRMSE and R^2)
+# 3. Seasonal Bar Charts (nRMSE, nMAE and R^2)
 # ---------------------------------------------------------------------------
 
 def plot_seasonal_bars(summary_df: pd.DataFrame) -> None:
-    """Bar charts of nRMSE, nMAE, and R^2 grouped by season (test set)."""
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-
-    present_seasons = [s for s in SEASON_ORDER if s in summary_df["season"].values]
-    plot_df = summary_df[summary_df["season"].isin(present_seasons)].copy()
+    """Bar charts of nRMSE, nMAE, and R^2 grouped by season (test set), split into separate plots."""
+    # Ensure Full Year is displayed alongside the seasons
+    present_categories = [s for s in ["Full Year"] + SEASON_ORDER if s in summary_df["season"].values]
+    plot_df = summary_df[summary_df["season"].isin(present_categories)].copy()
     plot_df["season"] = pd.Categorical(
-        plot_df["season"], categories=present_seasons, ordered=True
+        plot_df["season"], categories=present_categories, ordered=True
     )
 
-    sns.barplot(data=plot_df, x="season", y="nrmse_pct", hue="model",
-                palette=MODEL_COLOURS, ax=axes[0])
-    axes[0].set_title("nRMSE by Season")
-    axes[0].set_ylabel("nRMSE (%)")
-    axes[0].set_xlabel("")
+    metrics = [
+        ("nrmse_pct", "nRMSE (%)", "nRMSE Performance Comparison"),
+        ("nmae_pct", "nMAE (%)", "nMAE Performance Comparison"),
+        ("r2", r"$R^2$", r"$R^2$ Performance Comparison")
+    ]
 
-    sns.barplot(data=plot_df, x="season", y="nmae_pct", hue="model",
-                palette=MODEL_COLOURS, ax=axes[1])
-    axes[1].set_title("nMAE by Season")
-    axes[1].set_ylabel("nMAE (%)")
-    axes[1].set_xlabel("")
-
-    sns.barplot(data=plot_df, x="season", y="r2", hue="model",
-                palette=MODEL_COLOURS, ax=axes[2])
-    axes[2].set_title(r"$R^2$ by Season")
-    axes[2].set_ylabel(r"$R^2$")
-    axes[2].set_xlabel("")
-
-    fig.suptitle("Ridge vs. RF: Seasonal Performance Comparison (Test Set)", fontsize=14, y=1.02)
-    fig.tight_layout()
-
-    outpath = _ensure_dir() / f"seasonal_bars.{FIGURE_FORMAT}"
-    fig.savefig(outpath, dpi=FIGURE_DPI, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Saved %s", outpath)
+    for col, ylabel, title in metrics:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sns.barplot(data=plot_df, x="season", y=col, hue="model",
+                    palette=MODEL_COLOURS, ax=ax)
+        ax.set_title(title, fontsize=14)
+        ax.set_ylabel(ylabel)
+        ax.set_xlabel("")
+        
+        # Place legend nicely
+        ax.legend(title="Model", loc="best")
+        
+        fig.tight_layout()
+        outpath = _ensure_dir() / f"bar_{col}.{FIGURE_FORMAT}"
+        fig.savefig(outpath, dpi=FIGURE_DPI, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("Saved %s", outpath)
 
 
 # ---------------------------------------------------------------------------

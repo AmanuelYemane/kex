@@ -2,14 +2,14 @@
 evaluation.py
 -------------
 Compute regression metrics and residual diagnostics for the comparative
-analysis between MLR and Random Forest.
+analysis between RR and Random Forest.
 
 Metrics
 -------
 - nRMSE: Normalised Root Mean Squared Error (RMSE / mean(y) * 100 %)
 - nMAE: Normalised Mean Absolute Error (MAE / mean(y) * 100 %)
 - R^2: Coefficient of determination
-- Breusch-Pagan p-value: heteroscedasticity test on MLR residuals
+- Breusch-Pagan p-value: heteroscedasticity test on RR residuals
 - Durbin-Watson: autocorrelation in residuals
 """
 
@@ -52,8 +52,6 @@ class Metrics:
             "nrmse_pct": self.nrmse,
             "nmae_pct": self.nmae,
             "r2": self.r2,
-            "bp_pvalue": self.breusch_pagan_pvalue,
-            "dw_stat": self.durbin_watson_stat,
         }
 
 
@@ -198,7 +196,7 @@ def export_latex(df: pd.DataFrame, filepath: str) -> None:
         index=False,
         formatters=formatters,
         caption=(
-            "Comparative regression metrics for MLR and RF across Nordic seasons."
+            "Comparative regression metrics for RR and RF across Nordic seasons."
         ),
         label="tab:metrics_summary",
         column_format="llccccc",
