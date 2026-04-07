@@ -17,8 +17,6 @@ import numpy as np
 import pandas as pd
 
 from src.config import (
-    SNOW_ELIGIBLE_MONTHS,
-    SNOW_TEMP_THRESHOLD_C,
     SOLAR_CONSTANT,
     STC_TEMPERATURE,
     TARGET_COL,
@@ -60,15 +58,6 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         1.0 + TEMP_COEFFICIENT_GAMMA * (df["temperature"] - STC_TEMPERATURE)
     )
 
-    # --- Snow-cover proxy ---------------------------------------------------
-    # Binary flag: 1 if T_amb < 2 °C and month in {Nov, Dec, Jan, Feb, Mar}.
-    # Approximates enhanced ground albedo from snow cover.
-    month_series = df.index.month
-    df["snow_cover_proxy"] = (
-        (df["temperature"] < SNOW_TEMP_THRESHOLD_C)
-        & (month_series.isin(SNOW_ELIGIBLE_MONTHS))
-    ).astype(int)
-
     # --- Clearness index ----------------------------------------------------
     # k_t = GHI / I_0, where I_0 is extraterrestrial irradiance.
     # I_0 = S * (1 + 0.033 * cos(2 * pi * n / 365))  [Spencer, 1971]
@@ -107,4 +96,4 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
     """Return the list of feature column names (everything except target and season)."""
     exclude = {TARGET_COL, "season"}
-    return [c for c in df.columns if c not in exclude]
+    return [str(c) for c in df.columns if c not in exclude]

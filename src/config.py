@@ -83,10 +83,6 @@ TEMP_COEFFICIENT_GAMMA = -0.004  # typ. range: -0.003 to -0.005
 # Standard Test Conditions temperature (°C)
 STC_TEMPERATURE = 25.0
 
-# Snow-cover proxy: temperature threshold and eligible months
-SNOW_TEMP_THRESHOLD_C = 2.0
-SNOW_ELIGIBLE_MONTHS = (11, 12, 1, 2, 3)
-
 # Solar constant for extraterrestrial irradiance approximation (W/m²)
 SOLAR_CONSTANT = 1361.0
 

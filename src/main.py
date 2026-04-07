@@ -20,6 +20,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -80,10 +81,10 @@ def _run_model_on_split(
     """
     if model_name == "MLR":
         pipeline = build_mlr()
-        fitted = train_model(pipeline, split)
+        fitted, best_params = train_model(pipeline, split)
     else:
         pipeline = build_rf()
-        fitted = train_model(
+        fitted, best_params = train_model(
             pipeline,
             split,
             param_grid=RF_PARAM_GRID if do_grid_search else None,
@@ -114,7 +115,7 @@ def _run_model_on_split(
             rf_step.feature_importances_, feature_cols, season
         )
 
-    return metrics, fitted
+    return metrics, fitted, best_params
 
 
 # ---------------------------------------------------------------------------
@@ -200,19 +201,25 @@ def run_pipeline(
     print("STEP 4: Training and evaluating models")
     print("=" * 60)
     results: dict[str, dict[str, object]] = {}
+    best_params_dict: dict[str, dict[str, Any]] = {}
 
     for split_name, split_data in all_splits.items():
         print(f"\n--- {split_name} ---")
         results[split_name] = {}
+        best_params_dict[split_name] = {}
 
         for model_name in ("MLR", "RF"):
             label = "Ridge (MLR)" if model_name == "MLR" else "Random Forest"
             print(f"  Training {label} ...")
-            metrics, fitted = _run_model_on_split(
+            metrics, fitted, best_params = _run_model_on_split(
                 model_name, split_data, split_name, feature_cols,
                 do_grid_search=(do_grid_search and model_name == "RF"),
             )
             results[split_name][model_name] = metrics
+            
+            if best_params:
+                best_params_dict[split_name][model_name] = best_params
+                
             print(
                 f"    nRMSE={metrics.nrmse:.2f}%  "
                 f"nMAE={metrics.nmae:.2f}%  "
@@ -232,6 +239,12 @@ def run_pipeline(
     tex_path = RESULTS_DIR / "metrics_summary.tex"
     export_latex(summary_df, str(tex_path))
     print(f"  LaTeX -> {tex_path}")
+
+    if do_grid_search:
+        params_path = RESULTS_DIR / "best_hyperparameters.json"
+        with open(params_path, "w") as f:
+            json.dump(best_params_dict, f, indent=4)
+        print(f"  Hyperparameters -> {params_path}")
 
     # 7. Seasonal bar charts (all four seasons, test-set metrics)
     season_only = summary_df[summary_df["season"] != "Full Year"]

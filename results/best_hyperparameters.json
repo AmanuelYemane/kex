@@ -1,0 +1,42 @@
+{
+    "Full Year": {
+        "RF": {
+            "rf__max_depth": 10,
+            "rf__min_samples_leaf": 4,
+            "rf__min_samples_split": 2,
+            "rf__n_estimators": 500
+        }
+    },
+    "Winter": {
+        "RF": {
+            "rf__max_depth": 10,
+            "rf__min_samples_leaf": 4,
+            "rf__min_samples_split": 2,
+            "rf__n_estimators": 500
+        }
+    },
+    "Spring": {
+        "RF": {
+            "rf__max_depth": 10,
+            "rf__min_samples_leaf": 4,
+            "rf__min_samples_split": 2,
+            "rf__n_estimators": 100
+        }
+    },
+    "Summer": {
+        "RF": {
+            "rf__max_depth": 10,
+            "rf__min_samples_leaf": 4,
+            "rf__min_samples_split": 5,
+            "rf__n_estimators": 300
+        }
+    },
+    "Fall": {
+        "RF": {
+            "rf__max_depth": 10,
+            "rf__min_samples_leaf": 1,
+            "rf__min_samples_split": 2,
+            "rf__n_estimators": 500
+        }
+    }
+}

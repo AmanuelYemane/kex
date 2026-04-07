@@ -62,7 +62,7 @@ def train_model(
     *,
     param_grid: dict[str, list] | None = None,
     do_grid_search: bool = False,
-) -> Pipeline:
+) -> tuple[Pipeline, dict[str, Any]]:
     """Fit a pipeline on the training data, optionally with hyperparameter search.
 
     For **Ridge**: simply fits with RidgeCV (alpha selected internally).
@@ -84,8 +84,9 @@ def train_model(
 
     Returns
     -------
-    Pipeline
-        The fitted pipeline (or best estimator from grid search).
+    tuple[Pipeline, dict[str, Any]]
+        The fitted pipeline (or best estimator from grid search) and a 
+        dictionary of the best hyperparameters found (if any).
     """
     if do_grid_search and param_grid:
         # Combine train + val into a single array; PredefinedSplit marks
@@ -123,11 +124,11 @@ def train_model(
         # Refit the best model on training data only (not val)
         pipeline.set_params(**best_params)
         pipeline.fit(split.X_train, split.y_train)
-        return pipeline
+        return pipeline, best_params
 
     # Default: fit on training set only
     pipeline.fit(split.X_train, split.y_train)
-    return pipeline
+    return pipeline, {}
 
 
 def predict(pipeline: Pipeline, split: SplitData) -> np.ndarray:
