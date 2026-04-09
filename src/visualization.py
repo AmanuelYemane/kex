@@ -38,41 +38,46 @@ def _ensure_dir() -> Path:
 # 1. Actual vs Predicted Scatter
 # ---------------------------------------------------------------------------
 
-def plot_actual_vs_predicted(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+def plot_seasonal_scatter(
     model_name: str,
-    season: str,
-    *,
-    ax: plt.Axes | None = None,
-    save: bool = True,
-) -> plt.Figure | None:
-    """Scatter plot of actual vs. predicted with a 45-degree reference line."""
-    fig = None
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 5))
+    scatter_data: dict[str, dict[str, np.ndarray]],
+) -> None:
+    """A 2x2 subplot of Actual vs Predicted Power for all seasons."""
+    fig, axes = plt.subplots(2, 2, figsize=(10, 10), sharex=True, sharey=True)
+    flat_axes = axes.flatten()
 
-    ax.scatter(y_true, y_pred, alpha=0.35, s=12, edgecolors="none",
-               color=MODEL_COLOURS.get(model_name, "#555"))
-    lims = [
-        min(np.min(y_true), np.min(y_pred)),
-        max(np.max(y_true), np.max(y_pred)),
-    ]
-    ax.plot(lims, lims, "--", color="#2c3e50", linewidth=1.0, label="Ideal")
-    ax.set_xlabel("Actual Power (kW)")
-    ax.set_ylabel("Predicted Power (kW)")
-    ax.set_title(f"{model_name}: Actual vs. Predicted ({season})")
-    ax.legend(loc="upper left")
-    ax.set_aspect("equal", adjustable="box")
+    fig.suptitle(f"{model_name}: Actual vs Predicted Power by Season", fontsize=16, y=1.02)
+    fig.supxlabel("Actual Power (kW)", fontsize=14, y=-0.02)
+    fig.supylabel("Predicted Power (kW)", fontsize=14, x=-0.02)
 
-    if save and fig is not None:
-        outpath = _ensure_dir() / f"scatter_{model_name}_{season}.{FIGURE_FORMAT}"
-        fig.tight_layout()
-        fig.savefig(outpath, dpi=FIGURE_DPI)
-        plt.close(fig)
-        logger.info("Saved %s", outpath)
+    for i, season in enumerate(SEASON_ORDER):
+        if season not in scatter_data:
+            continue
+        ax = flat_axes[i]
+        
+        y_true = scatter_data[season]["y_true"]
+        y_pred = scatter_data[season]["y_pred"]
+        
+        ax.scatter(y_true, y_pred, alpha=0.35, s=12, edgecolors="none",
+                   color=MODEL_COLOURS.get(model_name, "#555"))
+        
+        # 45-degree reference line
+        lims = [
+            min(np.min(y_true), np.min(y_pred)),
+            max(np.max(y_true), np.max(y_pred)),
+        ]
+        ax.plot(lims, lims, "--", color="#2c3e50", linewidth=1.0, label="Ideal")
+        
+        ax.set_title(season, fontsize=14)
+        if i == 0:
+            ax.legend(loc="upper left")
+        ax.set_aspect("equal", adjustable="box")
 
-    return fig
+    fig.tight_layout()
+    outpath = _ensure_dir() / f"scatter_{model_name}_Seasonal.{FIGURE_FORMAT}"
+    fig.savefig(outpath, dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved %s", outpath)
 
 
 # ---------------------------------------------------------------------------

@@ -52,7 +52,6 @@ from src.feature_engineering import engineer_features, get_feature_columns
 from src.models import build_rr, build_rf, predict, train_model
 from src.seasonal_split import SplitData, chronological_split, seasonal_splits
 from src.visualization import (
-    plot_actual_vs_predicted,
     plot_correlation_heatmap,
     plot_qq,
     plot_residuals,
@@ -107,9 +106,6 @@ def _run_model_on_split(
     diag = residual_analysis(split.y_test, y_pred)
 
     # Plots (all based on test-set predictions)
-    plot_actual_vs_predicted(
-        np.asarray(split.y_test), y_pred, model_name, season
-    )
     plot_residuals(y_pred, diag.residuals, model_name, season)
     plot_qq(diag, model_name, season)
 
@@ -119,7 +115,7 @@ def _run_model_on_split(
         rf_step = fitted.named_steps["rf"]
         rf_importance = rf_step.feature_importances_
 
-    return metrics, fitted, best_params, rf_importance
+    return metrics, fitted, best_params, rf_importance, np.asarray(split.y_test), y_pred
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +203,7 @@ def run_pipeline(
     results: dict[str, dict[str, object]] = {}
     best_params_dict: dict[str, dict[str, Any]] = {}
     rf_importances_dict: dict[str, np.ndarray] = {}
+    scatter_data: dict[str, dict[str, dict[str, np.ndarray]]] = {"RR": {}, "RF": {}}
 
     loaded_params: dict[str, dict[str, Any]] = {}
     if not do_grid_search:
@@ -228,15 +225,17 @@ def run_pipeline(
             if not do_grid_search and split_name in loaded_params and model_name in loaded_params[split_name]:
                 preloaded_params = loaded_params[split_name][model_name]
 
-            metrics, fitted, best_params, rf_importance = _run_model_on_split(
+            metrics, fitted, best_params, rf_importance, y_true, y_pred = _run_model_on_split(
                 model_name, split_data, split_name, feature_cols,
                 do_grid_search=(do_grid_search and model_name == "RF"),
                 preloaded_params=preloaded_params,
             )
             results[split_name][model_name] = metrics
             
-            if rf_importance is not None and split_name != "Full Year":
-                rf_importances_dict[split_name] = rf_importance
+            if split_name != "Full Year":
+                if rf_importance is not None:
+                    rf_importances_dict[split_name] = rf_importance
+                scatter_data[model_name][split_name] = {"y_true": y_true, "y_pred": y_pred}
             
             if best_params:
                 best_params_dict[split_name][model_name] = best_params
@@ -272,11 +271,16 @@ def run_pipeline(
         plot_seasonal_bars(summary_df)
         print("  Seasonal bar charts saved.")
 
-    # 8. Feature importance subplots
+    # 8. Feature importance and scatter subplots
     if rf_importances_dict:
-        from src.visualization import plot_seasonal_feature_importances
+        from src.visualization import plot_seasonal_feature_importances, plot_seasonal_scatter
         plot_seasonal_feature_importances(rf_importances_dict, feature_cols)
         print("  Seasonal feature importances saved.")
+        
+        for model_name, s_data in scatter_data.items():
+            if s_data:
+                plot_seasonal_scatter(model_name, s_data)
+        print("  Seasonal scatter plots saved.")
 
     # 9. Console summary
     print("\n" + "=" * 60)
